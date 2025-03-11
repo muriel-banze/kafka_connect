@@ -1,0 +1,40 @@
+name: Build Container Images as Anonymous
+on:
+  pull_request:
+
+jobs:
+  build:
+    # Try to build as much as possible, even if a single job fails
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ['postgres', 'debezium', 'tool']
+    runs-on: ubuntu-latest
+    env:
+      DEBEZIUM_DOCKER_REGISTRY_PRIMARY_NAME: localhost:5500/debeziumquay
+      DEBEZIUM_DOCKER_REGISTRY_SECONDARY_NAME: localhost:5500/debezium
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build Scripts
+        run: shellcheck build-*.sh
+      - name: Start local docker registry
+        run: docker run -d -p 5500:5000 --restart=always --name registry registry:2
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+      - name: Build Component ${{ matrix.component }}
+        if: matrix.component != 'tool'
+        env:
+          SKIP_UI: true
+          PLATFORM_STAGE_PLATFORM: linux/amd64
+        run: ./build-all-multiplatform.sh ${{ matrix.component }}
+      - name: Build Tool Images
+        if: matrix.component == 'tool'
+        run: ./build-tool-images.sh latest
